@@ -1,0 +1,43 @@
+{
+  "expo": {
+    "name": "Medicina App",
+    "slug": "medicina-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0F0F1A"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0F0F1A"
+      },
+      "package": "com.medicinaapp",
+      "permissions": ["POST_NOTIFICATIONS"]
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.medicinaapp"
+    },
+    "plugins": [
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#6C63FF",
+          "sounds": []
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "8d841234-a269-48d7-b2c6-a3ea3b309ea0"
+      }
+    },
+    "owner": "tincho22"
+  }
+}
