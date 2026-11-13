@@ -1,8 +1,5 @@
-
-
 import { useEffect, useCallback, useRef, useState } from 'react';
 import * as Device from 'expo-device';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Alert, Linking, Platform } from 'react-native';
 import type { EventSubscription } from 'expo-modules-core';
 import { AndroidImportance } from 'expo-notifications/build/NotificationChannelManager.types';
@@ -14,11 +11,8 @@ import { getPermissionsAsync, requestPermissionsAsync } from 'expo-notifications
 import { scheduleNotificationAsync } from 'expo-notifications/build/scheduleNotificationAsync';
 import { setNotificationChannelAsync } from 'expo-notifications/build/setNotificationChannelAsync';
 import { setNotificationHandler } from 'expo-notifications/build/NotificationsHandler';
-import { Recordatorio } from '../types';
-
-
-const STORAGE_KEY = '@notifications_recordatorios';
-
+import { Recordatorio, UbicacionFarmacia, ContactoVinculado } from '../types';
+import { useRecordatoriosStore } from '../store/useRecordatoriosStore';
 
 setNotificationHandler({
   handleNotification: async () => ({
@@ -30,98 +24,55 @@ setNotificationHandler({
   }),
 });
 
-
 type PermissionStatus = 'idle' | 'granted' | 'denied' | 'loading';
 
-interface NuevoRecordatorio {
+export interface NuevoRecordatorioInput {
   titulo: string;
   descripcion: string;
   fechaProgramada: Date;
+  imagenUri?: string | null;
+  ubicacion?: UbicacionFarmacia | null;
+  contacto?: ContactoVinculado | null;
+  calendarEventId?: string | null;
 }
 
-interface UseLocalNotificationsReturn {
-  recordatorios: Recordatorio[];
-  permissionStatus: PermissionStatus;
-  cargando: boolean;
-  requestPermission: () => Promise<void>;
-  agregarRecordatorio: (data: NuevoRecordatorio) => Promise<void>;
-  eliminarRecordatorio: (id: string) => Promise<void>;
-  marcarCompletado: (id: string) => Promise<void>;
-  limpiarTodos: () => Promise<void>;
-}
+export function useLocalNotifications() {
+  const recordatorios = useRecordatoriosStore((state) => state.recordatorios);
+  const agregarRecordatorioStore = useRecordatoriosStore((state) => state.agregarRecordatorioStore);
+  const eliminarRecordatorioStore = useRecordatoriosStore((state) => state.eliminarRecordatorioStore);
+  const completarRecordatorioStore = useRecordatoriosStore((state) => state.completarRecordatorioStore);
+  const actualizarRecordatorioStore = useRecordatoriosStore((state) => state.actualizarRecordatorioStore);
+  const limpiarRecordatoriosStore = useRecordatoriosStore((state) => state.limpiarRecordatoriosStore);
+  const verificarExpirados = useRecordatoriosStore((state) => state.verificarExpirados);
 
-// ─── Hook 
-export function useLocalNotifications(): UseLocalNotificationsReturn {
-  const [recordatorios, setRecordatorios] = useState<Recordatorio[]>([]);
   const [permissionStatus, setPermissionStatus] = useState<PermissionStatus>('idle');
-  const [cargando, setCargando] = useState(true);
-
-  // Ref para el listener de notificaciones recibidas
   const notificationListener = useRef<EventSubscription | null>(null);
 
-  // ── Paso 5: Restaurar desde AsyncStorage al iniciar ──────────────────────
   useEffect(() => {
-    const restaurar = async () => {
-      try {
-        const raw = await AsyncStorage.getItem(STORAGE_KEY);
-        if (raw) {
-          const guardados: Recordatorio[] = JSON.parse(raw);
-          // Filtrar los que ya pasaron su fecha y no completados
-          const ahora = Date.now();
-          const vigentes = guardados.map((r) => {
-            if (!r.completado && r.fechaProgramada < ahora) {
-              return { ...r, notificationId: null }; // notif ya se disparó
-            }
-            return r;
-          });
-          setRecordatorios(vigentes);
-        }
-      } catch (err) {
-        console.error('[LocalNotif] Error al restaurar:', err);
-      } finally {
-        setCargando(false);
-      }
-    };
+    verificarExpirados();
 
-    restaurar();
-
-    // Listener para cuando se recibe una notificación estando en foreground
-    notificationListener.current = addNotificationReceivedListener(
-      (notification) => {
-        const notifId = notification.request.identifier;
-        // Marcar automáticamente como "recibida" en el estado
-        setRecordatorios((prev) =>
-          prev.map((r) =>
-            r.notificationId === notifId ? { ...r, notificationId: null } : r
-          )
-        );
+    notificationListener.current = addNotificationReceivedListener((notification) => {
+      const notifId = notification.request.identifier;
+      const actual = useRecordatoriosStore
+        .getState()
+        .recordatorios.find((r) => r.notificationId === notifId);
+      if (actual) {
+        actualizarRecordatorioStore(actual.id, { notificationId: null });
       }
-    );
+    });
 
     return () => {
       notificationListener.current?.remove();
     };
-  }, []);
+  }, [verificarExpirados, actualizarRecordatorioStore]);
 
-  // ── Persistir en AsyncStorage cada vez que cambia el estado ───────────────
-  const persistir = useCallback(async (lista: Recordatorio[]) => {
-    try {
-      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(lista));
-    } catch (err) {
-      console.error('[LocalNotif] Error al persistir:', err);
-    }
-  }, []);
-
-  
   const requestPermission = useCallback(async () => {
     setPermissionStatus('loading');
 
-    
     if (!Device.isDevice) {
       console.warn('[LocalNotif] Emulador detectado. Notificaciones pueden no funcionar.');
     }
 
-    
     if (Platform.OS === 'android') {
       try {
         await setNotificationChannelAsync('recordatorios', {
@@ -137,8 +88,6 @@ export function useLocalNotifications(): UseLocalNotificationsReturn {
     }
 
     const existingPermission = await getPermissionsAsync();
-    console.log('[LocalNotif] Permiso actual:', existingPermission);
-
     let finalStatus = existingPermission.status;
     let canAskAgain = existingPermission.canAskAgain;
 
@@ -151,8 +100,6 @@ export function useLocalNotifications(): UseLocalNotificationsReturn {
           allowSound: true,
         },
       });
-      console.log('[LocalNotif] Permiso luego de solicitar:', requestedPermission);
-
       finalStatus = requestedPermission.status;
       canAskAgain = requestedPermission.canAskAgain;
     }
@@ -173,9 +120,16 @@ export function useLocalNotifications(): UseLocalNotificationsReturn {
     }
   }, []);
 
-  
   const agregarRecordatorio = useCallback(
-    async ({ titulo, descripcion, fechaProgramada }: NuevoRecordatorio) => {
+    async ({
+      titulo,
+      descripcion,
+      fechaProgramada,
+      imagenUri = null,
+      ubicacion = null,
+      contacto = null,
+      calendarEventId = null,
+    }: NuevoRecordatorioInput) => {
       if (permissionStatus !== 'granted') {
         await requestPermission();
       }
@@ -187,7 +141,6 @@ export function useLocalNotifications(): UseLocalNotificationsReturn {
       let notifId: string | null = null;
 
       if (segundosHastaDisparar > 0) {
-        
         notifId = await scheduleNotificationAsync({
           content: {
             title: titulo,
@@ -200,7 +153,6 @@ export function useLocalNotifications(): UseLocalNotificationsReturn {
             seconds: segundosHastaDisparar,
           },
         });
-        console.log('[LocalNotif] Notificación programada, ID:', notifId);
       }
 
       const nuevo: Recordatorio = {
@@ -211,69 +163,52 @@ export function useLocalNotifications(): UseLocalNotificationsReturn {
         notificationId: notifId,
         completado: false,
         creadoEn: Date.now(),
+        imagenUri,
+        ubicacion,
+        contacto,
+        calendarEventId,
       };
 
-      setRecordatorios((prev) => {
-        const actualizada = [nuevo, ...prev];
-        persistir(actualizada);
-        return actualizada;
-      });
+      agregarRecordatorioStore(nuevo);
     },
-    [permissionStatus, requestPermission, persistir]
+    [permissionStatus, requestPermission, agregarRecordatorioStore]
   );
 
-  
   const eliminarRecordatorio = useCallback(
     async (id: string) => {
-      setRecordatorios((prev) => {
-        const item = prev.find((r) => r.id === id);
-        if (item?.notificationId) {
-          // Cancelar la notificación si aún no se disparó
-          cancelScheduledNotificationAsync(item.notificationId).catch(
-            console.error
-          );
-        }
-        const actualizada = prev.filter((r) => r.id !== id);
-        persistir(actualizada);
-        return actualizada;
-      });
+      const item = useRecordatoriosStore
+        .getState()
+        .recordatorios.find((r) => r.id === id);
+      if (item?.notificationId) {
+        cancelScheduledNotificationAsync(item.notificationId).catch(console.error);
+      }
+      eliminarRecordatorioStore(id);
     },
-    [persistir]
+    [eliminarRecordatorioStore]
   );
 
-  
   const marcarCompletado = useCallback(
     async (id: string) => {
-      setRecordatorios((prev) => {
-        const actualizada = prev.map((r) => {
-          if (r.id === id) {
-            if (r.notificationId) {
-              cancelScheduledNotificationAsync(r.notificationId).catch(
-                console.error
-              );
-            }
-            return { ...r, completado: true, notificationId: null };
-          }
-          return r;
-        });
-        persistir(actualizada);
-        return actualizada;
-      });
+      const item = useRecordatoriosStore
+        .getState()
+        .recordatorios.find((r) => r.id === id);
+      if (item?.notificationId) {
+        cancelScheduledNotificationAsync(item.notificationId).catch(console.error);
+      }
+      completarRecordatorioStore(id);
     },
-    [persistir]
+    [completarRecordatorioStore]
   );
 
-  
   const limpiarTodos = useCallback(async () => {
     await cancelAllScheduledNotificationsAsync();
-    await AsyncStorage.removeItem(STORAGE_KEY);
-    setRecordatorios([]);
-  }, []);
+    limpiarRecordatoriosStore();
+  }, [limpiarRecordatoriosStore]);
 
   return {
     recordatorios,
     permissionStatus,
-    cargando,
+    cargando: false,
     requestPermission,
     agregarRecordatorio,
     eliminarRecordatorio,

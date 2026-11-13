@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Image } from 'react-native';
 import { format, formatDistanceToNow, isPast } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { StatusChip } from './ui';
@@ -44,10 +44,37 @@ export function RecordatorioCard({ recordatorio: r, onEliminar, onCompletar }: P
         </Text>
       </View>
 
-      <Text style={[styles.titulo, r.completado && styles.tituloCompletado]}>
-        {r.titulo}
-      </Text>
-      {r.descripcion ? <Text style={styles.descripcion}>{r.descripcion}</Text> : null}
+      <View style={styles.bodyRow}>
+        {r.imagenUri ? (
+          <Image source={{ uri: r.imagenUri }} style={styles.medImage} />
+        ) : null}
+
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.titulo, r.completado && styles.tituloCompletado]}>
+            {r.titulo}
+          </Text>
+          {r.descripcion ? <Text style={styles.descripcion}>{r.descripcion}</Text> : null}
+        </View>
+      </View>
+
+      {/* Metadatos nativos (Farmacia GPS, Contacto, Calendario) */}
+      {(r.ubicacion || r.contacto || r.calendarEventId) && (
+        <View style={styles.metaContainer}>
+          {r.ubicacion && (
+            <Text style={styles.metaText}>
+              📍 Farmacia: {r.ubicacion.direccion || `${r.ubicacion.latitude.toFixed(3)}, ${r.ubicacion.longitude.toFixed(3)}`}
+            </Text>
+          )}
+          {r.contacto && (
+            <Text style={styles.metaText}>
+              👤 Contacto: {r.contacto.nombre} {r.contacto.telefono ? `(${r.contacto.telefono})` : ''}
+            </Text>
+          )}
+          {r.calendarEventId && (
+            <Text style={styles.metaText}>📅 Agendado en calendario</Text>
+          )}
+        </View>
+      )}
 
       <View style={styles.actions}>
         {!r.completado && (
@@ -92,6 +119,18 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
     fontFamily: Fonts.comic,
   },
+  bodyRow: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+    alignItems: 'center',
+  },
+  medImage: {
+    width: 56,
+    height: 56,
+    borderRadius: Radius.sm,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
   titulo: {
     fontSize: 16,
     fontFamily: Fonts.comic,
@@ -108,6 +147,18 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.comic,
     color: Colors.textSecondary,
     marginBottom: 6,
+  },
+  metaContainer: {
+    marginTop: Spacing.xs,
+    paddingTop: Spacing.xs,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+    gap: 2,
+  },
+  metaText: {
+    fontSize: 12,
+    fontFamily: Fonts.comic,
+    color: Colors.textSecondary,
   },
   actions: {
     flexDirection: 'row',

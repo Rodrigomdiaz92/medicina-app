@@ -8,20 +8,37 @@ import {
   Alert,
   StyleSheet,
   ScrollView,
+  Image,
+  Switch,
 } from 'react-native';
 import { format, addSeconds, addMinutes, addHours } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { Button } from './ui';
 import { Colors, Spacing, Radius, Fonts } from '../theme';
+import { UbicacionFarmacia, ContactoVinculado } from '../types';
+import { useMediaPicker } from '../hooks/useMediaPicker';
+import { useLocation } from '../hooks/useLocation';
+import { useContacts } from '../hooks/useContacts';
+import { useCalendar } from '../hooks/useCalendar';
 
 type TipoPreset = '10s' | '4h' | '6h' | '8h' | 'custom';
 type TipoUnidadDosis = 'pastillas' | 'ml';
 type UnidadesCustom = 'minutos' | 'horas';
 
+export interface DatosNuevoRecordatorio {
+  titulo: string;
+  descripcion: string;
+  fechaProgramada: Date;
+  imagenUri?: string | null;
+  ubicacion?: UbicacionFarmacia | null;
+  contacto?: ContactoVinculado | null;
+  calendarEventId?: string | null;
+}
+
 interface Props {
   visible: boolean;
   onClose: () => void;
-  onGuardar: (titulo: string, desc: string, fecha: Date) => Promise<void>;
+  onGuardar: (datos: DatosNuevoRecordatorio) => Promise<void>;
 }
 
 export function ModalAgregarRecordatorio({ visible, onClose, onGuardar }: Props) {
@@ -35,7 +52,18 @@ export function ModalAgregarRecordatorio({ visible, onClose, onGuardar }: Props)
   const [customValor, setCustomValor] = useState('15');
   const [customUnidad, setCustomUnidad] = useState<UnidadesCustom>('minutos');
 
+  // Recursos nativos (Parcial 2)
+  const [imagenUri, setImagenUri] = useState<string | null>(null);
+  const [ubicacion, setUbicacion] = useState<UbicacionFarmacia | null>(null);
+  const [contacto, setContacto] = useState<ContactoVinculado | null>(null);
+  const [agendarCalendario, setAgendarCalendario] = useState(false);
+
   const [guardando, setGuardando] = useState(false);
+
+  const { tomarFoto, elegirDeGaleria } = useMediaPicker();
+  const { cargandoUbicacion, obtenerUbicacionActual } = useLocation();
+  const { seleccionarContacto } = useContacts();
+  const { solicitarPermisoCalendario, agendarEnCalendario } = useCalendar();
 
   const resetear = () => {
     setTitulo('');
@@ -45,6 +73,10 @@ export function ModalAgregarRecordatorio({ visible, onClose, onGuardar }: Props)
     setPreset('10s');
     setCustomValor('15');
     setCustomUnidad('minutos');
+    setImagenUri(null);
+    setUbicacion(null);
+    setContacto(null);
+    setAgendarCalendario(false);
   };
 
   const calcularFechaProgramada = (): Date | null => {
@@ -61,6 +93,36 @@ export function ModalAgregarRecordatorio({ visible, onClose, onGuardar }: Props)
     return null;
   };
 
+  const handleTomarFoto = async () => {
+    const uri = await tomarFoto();
+    if (uri) setImagenUri(uri);
+  };
+
+  const handleGaleria = async () => {
+    const uri = await elegirDeGaleria();
+    if (uri) setImagenUri(uri);
+  };
+
+  const handleUbicacion = async () => {
+    const loc = await obtenerUbicacionActual();
+    if (loc) setUbicacion(loc);
+  };
+
+  const handleContacto = async () => {
+    const c = await seleccionarContacto();
+    if (c) setContacto(c);
+  };
+
+  const handleToggleCalendario = async (valor: boolean) => {
+    if (!valor) {
+      setAgendarCalendario(false);
+      return;
+    }
+
+    const concedido = await solicitarPermisoCalendario();
+    setAgendarCalendario(concedido);
+  };
+
   const handleGuardar = async () => {
     if (!titulo.trim()) {
       Alert.alert('Falta el título', 'Ingresá el nombre del medicamento o remedio.');
@@ -75,16 +137,35 @@ export function ModalAgregarRecordatorio({ visible, onClose, onGuardar }: Props)
 
     setGuardando(true);
     try {
-      // Construir la descripción incluyendo la dosis si existe
       let descFinal = '';
       if (dosis.trim()) {
-        descFinal += `Dosis: ${dosis.trim()} ${unidadDosis === 'pastillas' ? (parseFloat(dosis) === 1 ? 'pastilla' : 'pastillas') : 'ml'}`;
+        descFinal += `Dosis: ${dosis.trim()} ${
+          unidadDosis === 'pastillas'
+            ? parseFloat(dosis) === 1
+              ? 'pastilla'
+              : 'pastillas'
+            : 'ml'
+        }`;
       }
       if (descripcion.trim()) {
         descFinal += descFinal ? ` - ${descripcion.trim()}` : descripcion.trim();
       }
 
-      await onGuardar(titulo.trim(), descFinal, fecha);
+      let calendarEventId: string | null = null;
+      if (agendarCalendario) {
+        calendarEventId = await agendarEnCalendario(titulo.trim(), descFinal, fecha);
+      }
+
+      await onGuardar({
+        titulo: titulo.trim(),
+        descripcion: descFinal,
+        fechaProgramada: fecha,
+        imagenUri,
+        ubicacion,
+        contacto,
+        calendarEventId,
+      });
+
       resetear();
       onClose();
     } catch (err: any) {
@@ -158,6 +239,61 @@ export function ModalAgregarRecordatorio({ visible, onClose, onGuardar }: Props)
               maxLength={120}
             />
 
+            {/* Foto del medicamento (Cámara / Galería) */}
+            <Text style={styles.label}>Foto del medicamento (opcional)</Text>
+            <View style={styles.resourceRow}>
+              <TouchableOpacity style={styles.resourceBtn} onPress={handleTomarFoto}>
+                <Text style={styles.resourceBtnText}>📷 Cámara</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.resourceBtn} onPress={handleGaleria}>
+                <Text style={styles.resourceBtnText}>🖼️ Galería</Text>
+              </TouchableOpacity>
+            </View>
+            {imagenUri && (
+              <View style={styles.imagePreviewBox}>
+                <Image source={{ uri: imagenUri }} style={styles.imagePreview} />
+                <TouchableOpacity onPress={() => setImagenUri(null)}>
+                  <Text style={styles.removeText}>✕ Quitar foto</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* Ubicación GPS de la Farmacia */}
+            <Text style={styles.label}>Ubicación de farmacia (GPS)</Text>
+            <TouchableOpacity
+              style={styles.resourceBtnFull}
+              onPress={handleUbicacion}
+              disabled={cargandoUbicacion}
+            >
+              <Text style={styles.resourceBtnText}>
+                {cargandoUbicacion
+                  ? 'Obteniendo ubicación…'
+                  : ubicacion
+                  ? `📍 ${ubicacion.direccion}`
+                  : '📍 Adjuntar ubicación actual'}
+              </Text>
+            </TouchableOpacity>
+
+            {/* Contacto Relacionado (Médico / Familiar) */}
+            <Text style={styles.label}>Médico o Familiar (Contactos)</Text>
+            <TouchableOpacity style={styles.resourceBtnFull} onPress={handleContacto}>
+              <Text style={styles.resourceBtnText}>
+                {contacto
+                  ? `👤 ${contacto.nombre}${contacto.telefono ? ` (${contacto.telefono})` : ''}`
+                  : '👤 Seleccionar contacto'}
+              </Text>
+            </TouchableOpacity>
+
+            {/* Calendario del dispositivo */}
+            <View style={styles.switchRow}>
+              <Text style={styles.switchLabel}>📅 Agendar en calendario del teléfono</Text>
+              <Switch
+                value={agendarCalendario}
+                onValueChange={handleToggleCalendario}
+                trackColor={{ false: Colors.border, true: Colors.accent }}
+              />
+            </View>
+
             {/* Tiempo / Repetición */}
             <Text style={styles.label}>¿En cuánto tiempo notificará? *</Text>
             <View style={styles.presetsGrid}>
@@ -180,7 +316,6 @@ export function ModalAgregarRecordatorio({ visible, onClose, onGuardar }: Props)
               ))}
             </View>
 
-            {/* Inputs de Tiempo Personalizado */}
             {preset === 'custom' && (
               <View style={styles.customTimeRow}>
                 <TextInput
@@ -211,7 +346,6 @@ export function ModalAgregarRecordatorio({ visible, onClose, onGuardar }: Props)
               </View>
             )}
 
-            {/* Preview de hora de la notificación */}
             {fechaPreview && (
               <Text style={styles.preview}>
                 ⏰ Se disparará a las{' '}
@@ -222,7 +356,6 @@ export function ModalAgregarRecordatorio({ visible, onClose, onGuardar }: Props)
             )}
           </ScrollView>
 
-          {/* Botones */}
           <View style={styles.actions}>
             <Button label="Cancelar" onPress={onClose} variant="ghost" style={{ flex: 1 }} />
             <Button label="Guardar" onPress={handleGuardar} loading={guardando} style={{ flex: 1 }} />
@@ -243,7 +376,7 @@ const styles = StyleSheet.create({
   },
   container: {
     width: '100%',
-    maxHeight: '85%',
+    maxHeight: '90%',
     backgroundColor: Colors.surface,
     borderRadius: Radius.lg,
     padding: Spacing.lg,
@@ -313,6 +446,65 @@ const styles = StyleSheet.create({
   segmentTextActivo: {
     color: '#FFF',
     fontWeight: 'bold',
+  },
+  resourceRow: {
+    flexDirection: 'row',
+    gap: Spacing.xs,
+    marginBottom: Spacing.sm,
+  },
+  resourceBtn: {
+    flex: 1,
+    backgroundColor: Colors.surfaceHigh,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: Radius.sm,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  resourceBtnFull: {
+    backgroundColor: Colors.surfaceHigh,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: Radius.sm,
+    paddingVertical: 10,
+    paddingHorizontal: Spacing.md,
+    marginBottom: Spacing.md,
+  },
+  resourceBtnText: {
+    fontSize: 13,
+    fontFamily: Fonts.comic,
+    color: Colors.textPrimary,
+  },
+  imagePreviewBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    marginBottom: Spacing.md,
+  },
+  imagePreview: {
+    width: 64,
+    height: 64,
+    borderRadius: Radius.sm,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  removeText: {
+    color: Colors.danger,
+    fontSize: 12,
+    fontFamily: Fonts.comic,
+    fontWeight: 'bold',
+  },
+  switchRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: Spacing.md,
+    paddingVertical: 4,
+  },
+  switchLabel: {
+    fontSize: 13,
+    fontFamily: Fonts.comic,
+    color: Colors.textPrimary,
   },
   presetsGrid: {
     flexDirection: 'row',

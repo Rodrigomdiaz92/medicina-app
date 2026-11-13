@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalNotifications } from '../hooks/useLocalNotifications';
 import { Button, StatusChip, SectionHeader, EmptyState } from '../components/ui';
 import { RecordatorioCard } from '../components/RecordatorioCard';
-import { ModalAgregarRecordatorio } from '../components/ModalAgregarRecordatorio';
+import { DatosNuevoRecordatorio, ModalAgregarRecordatorio } from '../components/ModalAgregarRecordatorio';
 import { Colors, Spacing, Fonts } from '../theme';
 
 export default function HomeScreen() {
@@ -25,8 +25,8 @@ export default function HomeScreen() {
   const completados = recordatorios.filter((r) => r.completado);
 
   const handleGuardar = useCallback(
-    async (titulo: string, desc: string, fecha: Date) => {
-      await agregarRecordatorio({ titulo, descripcion: desc, fechaProgramada: fecha });
+    async (datos: DatosNuevoRecordatorio) => {
+      await agregarRecordatorio(datos);
     },
     [agregarRecordatorio]
   );
