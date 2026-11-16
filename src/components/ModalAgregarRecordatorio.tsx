@@ -52,7 +52,7 @@ export function ModalAgregarRecordatorio({ visible, onClose, onGuardar }: Props)
   const [customValor, setCustomValor] = useState('15');
   const [customUnidad, setCustomUnidad] = useState<UnidadesCustom>('minutos');
 
-  // Recursos nativos (Parcial 2)
+  // Recursos nativos 
   const [imagenUri, setImagenUri] = useState<string | null>(null);
   const [ubicacion, setUbicacion] = useState<UbicacionFarmacia | null>(null);
   const [contacto, setContacto] = useState<ContactoVinculado | null>(null);
